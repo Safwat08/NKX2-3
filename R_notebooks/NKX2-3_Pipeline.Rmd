@@ -1,0 +1,1436 @@
+---
+title: "Bulk Analysis"
+---
+
+
+# Input Variables (Main)
+```{r}
+## Enter name of project
+project.name <- "Bulk"
+
+# Set working directory:
+home <- "~/Documents/Projects/ExocrineVsEndocrineBulk/"
+
+# Source utilities
+source("../../Utilities/AnalysisUtilities.R")
+```
+
+# Script1
+
+```{r}
+library(readxl)
+Ilmn_table <- read_excel('../RawData/GPL10558-50081.xlsx')
+
+data <- read.table('../RawData/GSE28656_non-normalized_data.txt.gz', sep = '\t', row.names = 1) 
+
+colnames(data) <- data[1,]
+
+data <- data[-1,]
+
+data_id <- rownames(data)
+
+Ilmn_id <- as.vector(Ilmn_table[,1])[[1]]
+
+match_ind <- match(data_id, Ilmn_id)
+
+genes <- as.vector((Ilmn_table[match_ind,"Symbol"]))[[1]]
+
+data[,"gene"] <- genes
+
+newcols <- c("21B_Vector_1", "21B_Vector_2", "21B_KD_1", "21B_KD_2", "432_Vector_1", "432_Vector_2", "432_KD_1", "432_KD_2")
+
+
+meta <- data.frame(row.names = newcols)
+
+meta[,"Cell_line"] <- c(rep("21B", 4), rep("432",4))
+
+meta[,"Condition"] <- c("Vector", "Vector", "KD", "KD", "Vector", "Vector", "KD", "KD")
+```
+
+
+
+# Script1 Tabula Sapiens Fat 
+## Load unnormalized counts
+
+## Pipeline
+```{r}
+data <- read.table('../RawData/GSE157546_raw_counts_all_samples_200904.txt.gz')
+
+rownames(data) <- data[,1]
+
+colnames(data) <- data[1,]
+
+data <- data[-1,]
+
+data <- data[,-1]
+
+data <- data[,-1]
+
+genes <- rownames(data)
+
+colnames(data) <- c('Endo_IGM1', 'Exo_IGM1', 'Art_IGM1', 'Endo_Norm1', 'Exo_Norm1', 'Art_Norm1', 'Endo_Norm2', 'Exo_Norm2', 'Art_Norm2', 'Endo_Norm3', 'Exo_Norm3', 'Art_Norm3', 'Endo_IGM2', 'Exo_IGM2', 'Art_IGM2', 'Endo_Norm4', 'Exo_Norm4', 'Art_Norm4', 'Endo_Norm5', 'Exo_Norm5', 'Art_Norm5', 'Endo_Norm6', 'Exo_Norm6', 'Art_Norm6', 'Endo_IGM3', 'Exo_IGM3', 'Art_IGM3', 'Endo_Norm7', 'Exo_Norm7', 'Art_Norm7', 'Endo_IGM4', 'Exo_IGM4', 'Art_IGM4', 'Endo_IGM5', 'Exo_IGM5', 'Art_IGM5', 'Endo_Norm8', 'Exo_Norm8', 'Art_Norm8')
+
+data <- apply(data, 2, as.numeric)
+
+rownames(data) <- genes
+
+meta <- data.frame(matrix(NA, nrow=ncol(data), ncol=1))
+
+rownames(meta) <- samples
+
+meta[,1] <- c("Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery", "Endocrine", "Exocrine", "Artery")
+
+meta[,2] <- c("IGM", "IGM", "IGM", "Norm", "Norm", "Norm","Norm", "Norm", "Norm",  "Norm", "Norm", "Norm", "IGM", "IGM", "IGM", "Norm", "Norm","Norm","Norm", "Norm","Norm","Norm", "Norm","Norm", "IGM", "IGM", "IGM", "Norm", "Norm","Norm", "IGM", "IGM", "IGM", "IGM", "IGM", "IGM", "Norm", "Norm","Norm")
+
+meta[,3] <- c("IGM1", "IGM1", "IGM1", "Norm1", "Norm1", "Norm1", "Norm2", "Norm2", "Norm2", "Norm3", "Norm3", "Norm3", "IGM2", "IGM2", "IGM2", "Norm4", "Norm4", "Norm4", "Norm5", "Norm5", "Norm5", "Norm6", "Norm6", "Norm6", "IGM3", "IGM3", "IGM3", "Norm7", "Norm7", "Norm7", "IGM4", "IGM4", "IGM4", "IGM5", "IGM5", "IGM5", "Norm8", "Norm8", "Norm8")
+
+colnames(meta) <- c("anatomy", "glycemic_status", "donor")
+
+# Counts Per Million
+
+library_sizes <- colSums(data)
+normalized_counts <- t(t(data) / library_sizes) * 1e6
+
+
+# CreateSeuratObject
+object <- CreateSeuratObject(normalized_counts, project = project.name)
+
+object <- AddMetaData(object, meta)
+```
+
+# Script3 DESeq2 Pipeline
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = data,
+                              colData = meta,
+                              design= ~ anatomy)
+
+dds <- DESeq(dds)
+
+results <- results(dds, contrast = c("anatomy", "Endocrine", "Exocrine"))
+
+resultsNames(dds) 
+```
+
+
+
+
+
+# Script3 Run Seurat Pipeline
+
+
+## Load libraries
+```{r}
+library(Seurat) 
+
+library(clustree) # For clusttree plots
+
+library(docstring) # Some custom functions use dosctrings
+
+library(dplyr) # Imported functions use dplyr
+
+library(tidyverse) # Imported functions use tidyverse
+
+library(RColorBrewer) # For custom plots
+
+library(ggplot2) # For custom plots
+
+library(Matrix)
+
+library(phateR)
+
+library(SCpubr)
+```
+
+## Input Variable (logs)
+
+```{r}
+## mmSVF
+object <- object
+
+save_file <- '../RdsObjects/mmSVF_analyzed.rds'
+
+convGen <- F # To convert mouse to human genes only
+
+updGen <- F # To update geneList to latest HGNC symbols (Apr,2023)
+
+species <- "Human" # Options: human for homo sapiens, mouse for mus musculus, rat for rattus norvegicus, turn to human if converting to human
+
+calcMito <- T # calculate mitochondrial percentage 
+
+calcCC <- F # calculate cell cycle percentage 
+
+norm <- "LOG" # Normalization method
+
+scale_factor <- 10000 # 1,000,000 for SmartSeq2
+
+assay <- "LOG" # Assay to use for downstream analysis
+
+regVars <- c('') #"percent.mt", "S.Score", "G2M.Score"
+
+integrate <- T # Integrate with Harmony
+
+AddPhate <- F # Includes Phate reduction
+
+harmVars <- c("dataset", "orig.ident") # Harmony vars to regress
+
+umapX <- 2 # Include 3 for a 3D umap
+
+
+
+
+# merge microvessel and SVF
+object <- object
+
+save_file <- '../RdsObjects/mmSVF_analyzed.rds'
+
+convGen <- F # To convert mouse to human genes only
+
+updGen <- F # To update geneList to latest HGNC symbols (Apr,2023)
+
+species <- "mouse" # Options: human for homo sapiens, mouse for mus musculus, rat for rattus norvegicus, turn to human if converting to human
+
+calcMito <- T # calculate mitochondrial percentage 
+
+calcCC <- F # calculate cell cycle percentage 
+
+norm <- "LOG" # Normalization method
+
+scale_factor <- 10000 # 1,000,000 for SmartSeq2
+
+assay <- "LOG" # Assay to use for downstream analysis
+
+regVars <- c('') #"percent.mt", "S.Score", "G2M.Score"
+
+integrate <- F # Integrate with Harmony
+
+AddPhate <- F # Includes Phate reduction
+
+harmVars <- c("source") # Harmony vars to regress
+
+umapX <- 2 # Include 3 for a 3D umap
+
+
+
+```
+
+
+## Input Variables
+```{r}
+## mmSVF
+object <- object
+
+save_file <- '../RdsObjects/mmSVF_analyzed.rds'
+
+convGen <- F # To convert mouse to human genes only
+
+updGen <- F # To update geneList to latest HGNC symbols (Apr,2023)
+
+species <- "human" # Options: human for homo sapiens, mouse for mus musculus, rat for rattus norvegicus, turn to human if converting to human
+
+calcMito <- T # calculate mitochondrial percentage 
+
+calcCC <- F # calculate cell cycle percentage 
+
+norm <- "LOG" # Normalization method
+
+scale_factor <- 100000 # 1,000,000 for SmartSeq2
+
+assay <- "LOG" # Assay to use for downstream analysis
+
+regVars <- c('') #"percent.mt", "S.Score", "G2M.Score"
+
+integrate <- T # Integrate with Harmony
+
+AddPhate <- F # Includes Phate reduction
+
+harmVars <- c("dataset", "orig.ident") # Harmony vars to regress
+
+umapX <- 2 # Include 3 for a 3D umap
+
+```
+
+
+## Pipeline
+## Update and Convert Genes
+```{r}
+
+data <- object@assays$RNA@counts
+
+meta <- object@meta.data
+
+if (convGen == T) {
+  
+  genes <- rownames(data)
+  
+  genes <- convertGenes(genes, convertTo = "human")
+  
+  rownames(data) <- genes
+  
+}
+
+if (updGen == T) {
+  
+  # Load csv containing current HGNC symbols, their previous symbols and aliases
+  geneDB <- readRDS('../../Utilities/HGNC_Apr2023.rds')
+  
+  genes <- rownames(data)
+  
+  results <- UpdateSymbolSK(genes, geneDB, truncate = T)
+  
+  upd_genes <- results[[1]]
+  
+  rownames(data) <- upd_genes
+  
+}
+
+object <- CreateSeuratObject(data, project = project.name, meta.data = meta)
+
+object@assays$LOG <- object@assays$RNA
+
+```
+
+
+## Add mitochondrial expression
+```{r}
+if (calcMito == T) {
+
+# Adds percent.mt meta data to the object
+  object <-addPercentMT(object, species = species)
+
+}
+```
+
+## Normalize Data
+```{r}
+if (norm == "LOG") {
+  object@assays$LOG <- object@assays$RNA
+  
+  object <- NormalizeData(object, assay = "LOG", scale.factor = scale_factor)
+  
+  object <- FindVariableFeatures(object, selection.method = "vst", nfeatures = 2000, assay = "LOG",)
+  
+  object <- ScaleData(object, assay = "LOG", )
+
+} else if (norm == "SCT") {
+  
+  object <- SCTransform(object, assay = "RNA", vst.flavor = "v2")
+}
+```
+
+
+## CellCycleScoring
+```{r}
+
+if (calcCC == T) {
+  
+  if (species == "human"){
+    s.genes <- cc.genes$s.genes
+    g2m.genes <- cc.genes$g2m.genes
+  } else if (species == "mouse" | species == "rat"){
+    s.genes <- readRDS('../Utilities/mouse.s.genes.Rds')
+    g2m.genes <- readRDS('../Utilities/mouse.g2m.genes.Rds')
+  }
+  
+  object <- CellCycleScoring(object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+}  
+  if (norm == "LOG") {
+    object <- ScaleData(object, assay = "LOG", vars.to.regress = regVars)
+  } else if(norm == "SCT") {
+    object <- SCTransform(object, assay = "RNA", vars.to.regress = regVars)
+  }
+
+```
+
+
+## Liniear dimension reduction 
+```{r}
+
+if (integrate == T) {
+  object <- RunPCA(object, verbose =F, assay = assay, reduction.name = 'pca.old')
+} else if (integrate == F){
+  
+  object <- RunPCA(object, verbose =F, assay = assay, reduction.name = 'pca', npcs = 30)
+}
+
+```
+
+
+## Data Integration (Harmony)
+```{r}
+if (integrate == T) {
+
+  # Reanalyze object unti pca
+  # Then conduct Data integration harmony
+  
+  library(harmony)
+  
+  object <- RunHarmony(object, group.by.vars = harmVars, assay.use = norm, reduction = "pca.old", reduction.save = "pca", )
+
+}
+```
+
+## Data Integration (Seurat )
+## Phate
+
+```{r}
+
+if (AddPhate == T) {
+  
+  reduction.key <- "PHATE_"
+
+  data.use <- Embeddings(object[['pca']])
+  
+  phate_output <- phate(data.use)
+  
+    phate_output <- as.matrix(phate_output)
+    colnames(x = phate_output) <- paste0(reduction.key, 1:ncol(x = phate_output))
+    phate.reduction <- CreateDimReducObject(
+      embeddings = phate_output,
+      key = reduction.key,
+      assay = 'LOG'
+    )
+    
+  object[['PHATE']] <- phate.reduction
+  
+}
+
+
+```
+
+## Non-linear Readuction
+
+```{r}
+if (umapX>2) {
+  object <- RunUMAP(object, dims = 1:30, reduction = "pca", return.model = T, reduction.name = "umap3d", n.components = 3) # return model for other analysis
+} else if (umapX<=2) {
+  object <- RunUMAP(object, dims = 1:30, reduction = "pca", return.model = T, reduction.name = "umap", n.components = 2) # return model for other analysis
+}
+
+```
+
+## Neighbor 
+```{r}
+object <- FindNeighbors(object, dims = 1:30, reduction = "pca", graph.name=c("nn_pca", "nn_pca"))
+
+```
+
+## Clustering
+```{r}
+# Input 10 resolutions to build clustree later on
+
+res <- c(0.1)
+
+object <- FindClusters(object, resolution = res, graph.name = "nn_pca")
+
+#
+```
+
+## saveRDS
+```{r}
+saveRDS(object, file = save_file)
+```
+
+# Script4 Working File
+
+## load libraries
+```{r}
+library(Seurat)
+```
+
+
+## Marker Analysis 1 - Get all immune markers and immune cells from pancreas datasets
+```{r}
+geneDB <- readRDS('../../Utilities/HGNC_Apr2023.rds')
+
+# Pancreas object from Descartes
+pancDesc <- readRDS('../../../Paper/ScienceAdvances/Pancecc/RdsObjects/descartes/pancreas.cell.20k_new_annot.rds')
+
+# Set default assay
+DefaultAssay(pancDesc) <- "LOG"
+
+# Get immune subsetted object
+pancDesc_Imm <- subset(pancDesc, idents = c("T", "B", "Macrophage", "CCL19_CCL21 Pos"))
+
+# Save immune subsetted object
+saveRDS(pancDesc_Imm, '../RdsObjects/immune_pancreas_descartes.rds')
+
+# Find markers for immune cells
+ImmuneMarkers_Desc <- FindMarkers(pancDesc, ident.1 = c("T", "B", "Macrophage", "CCL19_CCL21 Pos"), only.pos = T)
+
+# save markers
+write.csv(ImmuneMarkers_Desc, file = '../Data/DescartesPancreasImmuneMarkers.csv')
+
+# Get marker genes
+genes <- rownames(ImmuneMarkers_Desc)
+
+# Update using geneDB
+ImmDesc_genes <- UpdateSymbolSK(genes, geneDB, truncate = T)[[1]]
+
+# save immune_pancreas_descartes_genes.rds
+saveRDS(ImmDesc_genes, '../RdsObjects/immune_pancreas_descartes_genes.rds')
+
+
+# Repeat for Tabula Muris Pancreas
+pancTabm <- readRDS('../../../Paper/ScienceAdvances/Pancecc/RdsObjects/tabulamuris/pancreas_new_annot.rds')
+
+DefaultAssay(pancTabm) <- "LOG"
+
+pancTabm_Imm <- subset(pancTabm, idents = c("Macrophage"))
+
+saveRDS(pancTabm_Imm, '../RdsObjects/immune_pancreas_tabulamuris.rds')
+
+ImmuneMarkers_Tabm <- FindMarkers(pancTabm, ident.1 = c("Macrophage"), only.pos = T)
+
+write.csv(ImmuneMarkers_Tabm, file = '../Data/TabulaMurisPancreasImmuneMarkers.csv')
+
+genes <- rownames(ImmuneMarkers_Tabm)
+  
+genesH <- convertGenes(genes, convertTo = "human")
+
+ImmTabm_genes <- UpdateSymbolSK(genesH, geneDB, truncate = T)[[1]]
+
+saveRDS(ImmTabm_genes, '../RdsObjects/immune_pancreas_tabulamuris_genes.rds')
+
+
+
+# Repeat for Tabula Sapiens Pancreas
+pancTabs <- readRDS('../../../Paper/ScienceAdvances/Pancecc/RdsObjects/tabulasapiens/panc.log.methodharm_new_annot.rds')
+
+DefaultAssay(pancTabs) <- "LOG"
+
+pancTabs_Imm <- subset(pancTabs, idents = c("Macrophage", "B", "T"))
+
+saveRDS(pancTabs_Imm, '../RdsObjects/immune_pancreas_tabulasapiens.rds')
+
+ImmuneMarkers_Tabs <- FindMarkers(pancTabs, ident.1 = c("Macrophage", "B", "T"), only.pos = T)
+
+write.csv(ImmuneMarkers_Tabs, file = '../Data/TabulaSapiensPancreasImmuneMarkers.csv')
+
+genes <- rownames(ImmuneMarkers_Tabs)
+
+ImmTabs_genes <- UpdateSymbolSK(genes, geneDB, truncate = T)[[1]]
+
+saveRDS(ImmTabs_genes, '../RdsObjects/immune_pancreas_tabulasapiens_genes.rds')
+
+
+
+# Repeat for Tosti Adult Pancreas
+pancTostiAdult <- readRDS('../../../Paper/ScienceAdvances/Pancecc/RdsObjects/tostiadult/object.Max4246cells.analyzed_new_annot.rds')
+
+DefaultAssay(pancTostiAdult) <- "LOG"
+
+pancTostiAdult_Imm <- subset(pancTostiAdult, idents = c("Macrophage"))
+
+saveRDS(pancTostiAdult_Imm, '../RdsObjects/immune_pancreas_tostiadult.rds')
+
+ImmuneMarkers_TostiAdult <- FindMarkers(pancTostiAdult, ident.1 = c("Macrophage"), only.pos = T)
+
+write.csv(ImmuneMarkers_TostiAdult, file = '../Data/TostiAdultPancreasImmuneMarkers.csv')
+
+genes <- rownames(ImmuneMarkers_TostiAdult)
+
+ImmTostiAdult_genes <- UpdateSymbolSK(genes, geneDB, truncate = T)[[1]]
+
+saveRDS(ImmTostiAdult_genes, '../RdsObjects/immune_pancreas_tostiadult_genes.rds')
+
+
+# Repeat for Tosti Neonatal Pancreas
+pancTostiNeo <- readRDS('../../../Paper/ScienceAdvances/Pancecc/RdsObjects/tostineonatal/neonatal.ID.harm.analyzed_new_annot.rds')
+
+DefaultAssay(pancTostiNeo) <- "LOG"
+
+pancTostiNeo_Imm <- subset(pancTostiNeo, idents = c("Macrophage", "T", "B"))
+
+saveRDS(pancTostiNeo_Imm, '../RdsObjects/immune_pancreas_tostineo.rds')
+
+ImmuneMarkers_TostiNeo <- FindMarkers(pancTostiNeo, ident.1 = c("Macrophage", "T", "B"), only.pos = T)
+
+write.csv(ImmuneMarkers_TostiNeo, file = '../Data/TostiNeoPancreasImmuneMarkers.csv')
+
+genes <- rownames(ImmuneMarkers_TostiNeo)
+
+ImmTostiNeo_genes <- UpdateSymbolSK(genes, geneDB, truncate = T)[[1]]
+
+saveRDS(ImmTostiNeo_genes, '../RdsObjects/immune_pancreas_tostineo_genes.rds')
+
+
+# Merge all genes to get immune gene list
+ImmGenes_Panc <- unique(c(ImmDesc_genes, ImmTabm_genes, ImmTabs_genes, ImmTostiAdult_genes, ImmTostiNeo_genes))
+
+# Save
+saveRDS(ImmGenes_Panc, file = '../RdsObjects/immunegenes_overlap_pancreas.rds')
+```
+
+## Marker Analysis 2 - Get all pancreas myeloid markers from atlases
+```{r}
+# Immune genes
+ImmGenes_Panc <- readRDS('../RdsObjects/immunegenes_overlap_pancreas.rds')
+
+# Tabula Sapiens 10X Myeloid Population Analyzed
+tabs_object_10x <- readRDS('../RdsObjects/TabulaSapiens/myeloid_all_10X_Only_analyzed.rds')
+DefaultAssay(tabs_object_10x) <- "LOG"
+tabs_object_10x <- SetIdent(tabs_object_10x, value = 'organ_tissue')
+
+tabs10x_panc_markers <- FindMarkers(tabs_object_10x, ident.1 = 'Pancreas', only.pos = T)
+tabs10x_panc_markers <- topMarkers(tabs10x_panc_markers, 'all')
+tabs10x_panc_sig_genes <- intersect(rownames(tabs10x_panc_markers), ImmGenes_Panc)
+
+write.csv(tabs10x_panc_markers, "../Data/TabulaSapiens/tabs10x_panc_markers.csv")
+saveRDS(tabs10x_panc_sig_genes, "../RdsObjects/TabulaSapiens/tabs10x_panc_sig_genes.rds")
+
+# Tabula Sapiens Smartseq2 Myeloid Population Analyzed
+tabs_object_SS <- readRDS('../RdsObjects/TabulaSapiens/myeloid_all_SS_Only_analyzed.rds')
+DefaultAssay(tabs_object_SS) <- "LOG"
+tabs_object_SS <- SetIdent(tabs_object_SS, value = 'organ_tissue')
+
+tabsSS_panc_markers <- FindMarkers(tabs_object_SS, ident.1 = 'Pancreas', only.pos = T)
+tabsSS_panc_markers <- topMarkers(tabsSS_panc_markers, 'all')
+tabsSS_panc_sig_genes <- intersect(rownames(tabsSS_panc_markers), ImmGenes_Panc)
+
+write.csv(tabsSS_panc_markers, "../Data/TabulaSapiens/tabsSS_panc_markers.csv")
+saveRDS(tabsSS_panc_sig_genes, "../RdsObjects/TabulaSapiens/tabsSS_panc_sig_genes.rds")
+
+# Descartes Myeloid Population Analyzed
+desc_object <- readRDS('../RdsObjects/Descartes/myeloid_analyzed.rds')
+DefaultAssay(desc_object) <- "LOG"
+desc_object <- SetIdent(desc_object, value = 'Organ')
+
+desc_panc_markers <- FindMarkers(desc_object, ident.1 = 'Pancreas', only.pos = T)
+desc_panc_markers <- topMarkers(desc_panc_markers, 'all')
+desc_panc_sig_genes <- intersect(rownames(desc_panc_markers), ImmGenes_Panc)
+
+write.csv(desc_panc_markers, "../Data/Descartes/desc_panc_markers.csv")
+saveRDS(desc_panc_sig_genes, "../RdsObjects/Descartes/desc_panc_sig_genes.rds")
+
+# Tabula Muris Myeloid Population Analyzed
+tabm_object <- readRDS('../RdsObjects/TabulaMuris/merged_analyzed.rds')
+DefaultAssay(tabm_object) <- "LOG"
+tabm_object <- SetIdent(tabm_object, value = 'tissue')
+
+tabm_panc_markers <- FindMarkers(tabm_object, ident.1 = 'Pancreas', only.pos = T)
+tabm_panc_markers <- topMarkers(tabm_panc_markers, 'all')
+tabm_panc_all_genesM <- rownames(tabm_panc_markers)
+tabm_panc_all_genesH <- convertGenes(tabm_panc_all_genesM, 'human')
+
+tabm_panc_sig_genesH <- intersect(tabm_panc_all_genesH, ImmGenes_Panc)
+
+write.csv(tabm_panc_markers, "../Data/TabulaMuris/tabm_panc_markers.csv")
+saveRDS(tabm_panc_sig_genesH, "../RdsObjects/TabulaMuris/tabm_panc_sig_genesH.rds")
+
+# All overlapping genes
+A <- intersect(tabm_panc_sig_genesH, desc_panc_sig_genes)
+B <- intersect(tabm_panc_sig_genesH, tabsSS_panc_sig_genes)
+C <- intersect(tabm_panc_sig_genesH, tabs10x_panc_sig_genes)
+D <- intersect(desc_panc_sig_genes, tabsSS_panc_sig_genes)
+E <- intersect(desc_panc_sig_genes, tabs10x_panc_sig_genes)
+G <- intersect(tabsSS_panc_sig_genes, tabs10x_panc_sig_genes)
+
+overlapGenes <- unique(c(A,B,C,D,E,G))
+
+saveRDS(overlapGenes, file = '../RdsObjects/all_overlap_genes.rds')
+
+```
+
+## Marker Analysis - Quick Load
+```{r}
+tabs_object_10x <- readRDS('../RdsObjects/TabulaSapiens/myeloid_all_10X_Only_analyzed.rds')
+tabs10x_panc_markers <- read.csv("../Data/TabulaSapiens/tabs10x_panc_markers.csv", row.names = 1)
+tabs10x_panc_markers_genes <- rownames(tabs10x_panc_markers)
+tabs10x_panc_sig_genes <- readRDS("../RdsObjects/TabulaSapiens/tabs10x_panc_sig_genes.rds")
+
+tabs_object_SS <- readRDS('../RdsObjects/TabulaSapiens/myeloid_all_SS_Only_analyzed.rds')
+tabsSS_panc_markers <- read.csv("../Data/TabulaSapiens/tabsSS_panc_markers.csv", row.names = 1)
+tabsSS_panc_markers_genes <- rownames(tabsSS_panc_markers)
+tabsSS_panc_sig_genes <- readRDS("../RdsObjects/TabulaSapiens/tabsSS_panc_sig_genes.rds")
+
+desc_object <- readRDS('../RdsObjects/Descartes/myeloid_analyzed.rds')
+desc_panc_markers <- read.csv("../Data/Descartes/desc_panc_markers.csv", row.names = 1)
+desc_panc_markers_genes <- rownames(desc_panc_markers)
+desc_panc_sig_genes <- readRDS("../RdsObjects/Descartes/desc_panc_sig_genes.rds")
+
+tabm_object <- readRDS('../RdsObjects/TabulaMuris/merged_analyzed.rds')
+tabm_panc_markers <- read.csv("../Data/TabulaMuris/tabm_panc_markers.csv", row.names = 1)
+tabm_panc_markers_genes <- rownames(tabm_panc_markers)
+tabm_panc_sig_genesH <- readRDS("../RdsObjects/TabulaMuris/tabm_panc_sig_genesH.rds")
+
+ImmGenes_Panc <- readRDS('../RdsObjects/immunegenes_overlap_pancreas.rds')
+```
+
+# Figures:
+
+## Load libraries
+```{r}
+# load libraries
+library(Seurat)
+library(ggplot2)
+library(scales)
+library(cowplot)
+library(dplyr)
+library(homologene)
+library(stringr)
+library(ggvenn)
+library(paletteer) 
+library(Matrix)
+library(data.table)
+library(ggpubr)
+library(viridis)
+library(ggtree)
+library(tidyverse)
+library(patchwork)
+library(SCpubr)
+library(SCORPIUS)
+```
+
+
+## Figure 2A-C - Tabula Sapiens 10x Umap/barplot/DE-analysis
+```{r}
+# Figure 1A and 1B
+object <- tabs_object_10x
+
+object$dataset <- "Tabula Sapiens 10X"
+
+meta <- "organ_tissue"
+
+organ <- "Pancreas"
+
+Markers <- tabs10x_panc_markers
+
+object <- SetIdent(object, value = meta)
+
+# Get data from object and convert to dataframe
+data <- as.data.frame(table(object@meta.data[meta]))
+
+data <- data[order(data$Freq, decreasing = T),]
+
+# Seurat color scheme
+color <- do_ColorPalette("steelblue", nrow(data))
+
+rest <- setdiff(data[,1], organ)
+
+my_levels <- c(organ, rest)
+
+names(color) <- my_levels
+
+# Relevel object@ident
+object@active.ident<- factor(x = object@active.ident, levels = my_levels)
+
+dPlot <- do_DimPlot(object, 
+                     legend.icon.size = 5, 
+                     font.size = 20, 
+                     colors.use = color, legend.ncol = 3, legend.nrow = 7)
+
+# ggplot percentage stacked bar chart
+bPlot <- do_BarPlot(object, 
+                         group.by = meta,
+                         split.by = "dataset",
+                         position = "fill",
+                         flip = FALSE, legend.position = "none", colors.use = color, font.size = 20) + theme(axis.text.x = element_blank(), axis.title.x = element_blank(),)
+
+vPlot <- do_VolcanoPlot(sample = object, de_genes = Markers, FC_cutoff = 0.25, colors.use = c("darkred"), n_genes = 5, add_gene_tags = T, use_labels = T, font.size = 20, pval_cutoff = 1)
+
+
+p2 <- plot_grid(dPlot, bPlot, vPlot, nrow=1, ncol=3, rel_widths = c(4,1,4))
+
+ggsave(p2, filename = "../Results/Figures/Figure2A-C.png", width = 15, height = 7)
+
+```
+
+## Figure 2D-F - Tabula Sapiens SmartSeq2 Umap/barplot/DE-analysis
+```{r}
+# Figure 1A and 1B
+object <- tabs_object_SS
+
+object$dataset <- "Tabula Sapiens SS"
+
+meta <- "organ_tissue"
+
+organ <- "Pancreas"
+
+Markers <- tabsSS_panc_markers
+
+object <- SetIdent(object, value = meta)
+
+# Get data from object and convert to dataframe
+data <- as.data.frame(table(object@meta.data[meta]))
+
+data <- data[order(data$Freq, decreasing = T),]
+
+# Seurat color scheme
+color <- do_ColorPalette("steelblue", nrow(data))
+
+rest <- setdiff(data[,1], organ)
+
+my_levels <- c(organ, rest)
+
+names(color) <- my_levels
+
+# Relevel object@ident
+object@active.ident<- factor(x = object@active.ident, levels = my_levels)
+
+dPlot <- do_DimPlot(object, 
+                     legend.icon.size = 5, 
+                     font.size = 20, 
+                     colors.use = color, legend.ncol = 3, legend.nrow = 7)
+
+# ggplot percentage stacked bar chart
+bPlot <- do_BarPlot(object, 
+                         group.by = meta,
+                         split.by = "dataset",
+                         position = "fill",
+                         flip = FALSE, legend.position = "none", colors.use = color, font.size = 20) + theme(axis.text.x = element_blank(), axis.title.x = element_blank(),)
+
+vPlot <- do_VolcanoPlot(sample = object, de_genes = Markers, FC_cutoff = 0.25, colors.use = c("darkred"), n_genes = 5, add_gene_tags = T, use_labels = T, font.size = 20, pval_cutoff = 1)
+
+
+p2 <- plot_grid(dPlot, bPlot, vPlot, nrow=1, ncol=3, rel_widths = c(4,1,4))
+
+ggsave(p2, filename = "../Results/Figures/Figure2D-F.png", width = 15, height = 7)
+
+```
+
+## Figure 2G-H - Descartes Umap/barplot/DE-analysis
+```{r}
+# Figure 1A and 1B
+object <- desc_object
+
+object$dataset <- "Descartes"
+
+meta <- "Organ"
+
+organ <- "Pancreas"
+
+Markers <- desc_panc_markers
+
+object <- SetIdent(object, value = meta)
+
+# Get data from object and convert to dataframe
+data <- as.data.frame(table(object@meta.data[meta]))
+
+data <- data[order(data$Freq, decreasing = T),]
+
+# Seurat color scheme
+color <- do_ColorPalette("steelblue", nrow(data))
+
+rest <- setdiff(data[,1], organ)
+
+my_levels <- c(organ, rest)
+
+names(color) <- my_levels
+
+# Relevel object@ident
+object@active.ident<- factor(x = object@active.ident, levels = my_levels)
+
+dPlot <- do_DimPlot(object, 
+                     legend.icon.size = 5, 
+                     font.size = 20, 
+                     colors.use = color, legend.ncol = 3, legend.nrow = 7)
+
+# ggplot percentage stacked bar chart
+bPlot <- do_BarPlot(object, 
+                         group.by = meta,
+                         split.by = "dataset",
+                         position = "fill",
+                         flip = FALSE, legend.position = "none", colors.use = color, font.size = 20) + theme(axis.text.x = element_blank(), axis.title.x = element_blank(),)
+
+vPlot <- do_VolcanoPlot(sample = object, de_genes = Markers, FC_cutoff = 0.25, colors.use = c("darkred"), n_genes = 5, add_gene_tags = T, use_labels = T, font.size = 20, pval_cutoff = 1)
+
+
+p2 <- plot_grid(dPlot, bPlot, vPlot, nrow=1, ncol=3, rel_widths = c(4,1,4))
+
+ggsave(p2, filename = "../Results/Figures/Figure2G-H.png", width = 15, height = 7)
+
+```
+
+
+## Figure 2I-J - Tabula Muris Umap/barplot/DE-analysis
+```{r}
+# Figure 1A and 1B
+object <- tabm_object
+
+object$dataset <- "Tabula Muris"
+
+meta <- "tissue"
+
+organ <- "Pancreas"
+
+Markers <- tabm_panc_markers
+
+object <- SetIdent(object, value = meta)
+
+# Get data from object and convert to dataframe
+data <- as.data.frame(table(object@meta.data[meta]))
+
+data <- data[order(data$Freq, decreasing = T),]
+
+# Seurat color scheme
+color <- do_ColorPalette("steelblue", nrow(data))
+
+rest <- setdiff(data[,1], organ)
+
+my_levels <- c(organ, rest)
+
+names(color) <- my_levels
+
+# Relevel object@ident
+object@active.ident<- factor(x = object@active.ident, levels = my_levels)
+
+dPlot <- do_DimPlot(object, 
+                     legend.icon.size = 5, 
+                     font.size = 20, 
+                     colors.use = color, legend.ncol = 3, legend.nrow = 7)
+
+# ggplot percentage stacked bar chart
+bPlot <- do_BarPlot(object, 
+                         group.by = meta,
+                         split.by = "dataset",
+                         position = "fill",
+                         flip = FALSE, legend.position = "none", colors.use = color, font.size = 20) + theme(axis.text.x = element_blank(), axis.title.x = element_blank(),)
+
+vPlot <- do_VolcanoPlot(sample = object, de_genes = Markers, FC_cutoff = 0.25, colors.use = c("darkred"), n_genes = 5, add_gene_tags = T, use_labels = T, font.size = 20, pval_cutoff = 1)
+
+
+p2 <- plot_grid(dPlot, bPlot, vPlot, nrow=1, ncol=3, rel_widths = c(4,1,4))
+
+ggsave(p2, filename = "../Results/Figures/Figure2I-J.png", width = 15, height = 7)
+
+```
+
+
+## Figure 3A-F - Teasing out contamination
+```{r}
+
+library(ggvenn)
+
+vennList1 <- list("A" = ImmGenes_Panc,
+                 "B" = tabs10x_panc_markers_genes)
+vennList2 <- list("A" = ImmGenes_Panc,
+                 "B" = tabsSS_panc_markers_genes)
+vennList3 <- list("A" = ImmGenes_Panc,
+                 "B" = desc_panc_markers_genes)
+vennList4 <- list("A" = ImmGenes_Panc,
+                 "B" = tabm_panc_markers_genes)
+
+color <- SCpubr::do_ColorPalette(colors.use = "steelblue", n = 2)
+
+poolVenn1 <- ggvenn(
+  vennList1, 
+  fill_color = color,
+  stroke_size = 0.5, 
+  set_name_size = 1,
+  show_percentage = F, text_size = 8, 
+  )
+
+poolVenn2 <- ggvenn(
+  vennList2, 
+  fill_color = color,
+  stroke_size = 0.5, 
+  set_name_size = 1,
+  show_percentage = F, text_size = 8, 
+  )
+
+poolVenn3 <- ggvenn(
+  vennList3, 
+  fill_color = color,
+  stroke_size = 0.5, 
+  set_name_size = 1,
+  show_percentage = F, text_size = 8, 
+  )
+
+poolVenn4 <- ggvenn(
+  vennList4, 
+  fill_color = color,
+  stroke_size = 0.5, 
+  set_name_size = 1,
+  show_percentage = F, text_size = 8, 
+  )
+p <- plot_grid(poolVenn1, poolVenn2, poolVenn3, poolVenn4, nrow=2, ncol=2, rel_widths = c(1,1))
+
+ggsave(p , filename = "../Results/Figures/Figure3A-D.png")
+
+
+# All together
+vennList5 <- list("A" = tabs10x_panc_sig_genes,
+                 "B" = tabsSS_panc_sig_genes,
+                 "C" = desc_panc_sig_genes,
+                 "D" = tabm_panc_sig_genesH)
+
+
+color <- SCpubr::do_ColorPalette(colors.use = "steelblue", n = 4)
+
+poolVenn5 <- ggvenn(
+  vennList5, 
+  fill_color = color,
+  stroke_size = 0.5, 
+  set_name_size = 1,
+  show_percentage = F, text_size = 10, 
+  )
+
+ggsave(poolVenn5, filename = "../Results/Figures/Figure3E.png")
+
+
+
+vennList6 <- list("A" = tabs10x_panc_sig_genes,
+                 "C" = desc_panc_sig_genes)
+
+
+color <- SCpubr::do_ColorPalette(colors.use = "steelblue", n = 2)
+
+poolVenn6 <- ggvenn(
+  vennList6, 
+  fill_color = color,
+  stroke_size = 0.5, 
+  set_name_size = 1,
+  show_percentage = F, text_size = 10, 
+  )
+
+ggsave(poolVenn4, filename = "../Results/Figure3F.png")
+```
+
+
+## Figure 4A - DotPlot of genes of interest, Tabula Sapiens
+
+```{r}
+overlapGenes <- readRDS('../RdsObjects/all_overlap_genes.rds')
+
+genes <- intersect(tabs10x_panc_sig_genes, overlapGenes)
+
+# Tabula Sapiens
+markers <- tabs10x_panc_markers[genes,]
+
+object <- tabs_object_10x
+
+markers$pct.diff <- markers$pct.1 - markers$pct.2
+
+markers$pct.fold <- markers$pct.1/markers$pct.2
+
+# Choose one
+indPct_diff <- order(markers$pct.diff, decreasing = T)
+
+indPct_fold <- order(markers$pct.fold, decreasing = T)
+
+indLog_fold <- order(markers$avg_log2FC, decreasing = T)
+
+genes <- rownames(markers[indLog_fold,])
+
+dPlot <- DotPlot(object, features = genes)
+
+data <- dPlot$data
+
+mat <- data %>% 
+  select(-avg.exp, -pct.exp)%>%  # drop unused columns to faciliate widening
+  pivot_wider(names_from = id, values_from = avg.exp.scaled)%>% 
+  data.frame() # make df as tibbles -> matrix annoying
+
+mat.t <- t(mat)
+colnames(mat.t) <- mat.t[1,]
+mat.t <- mat.t[-1,]
+clust <- hclust(dist(mat.t %>% as.matrix())) # hclust with distance matrix
+
+
+my_levels <- sub("[.]", " ", clust$labels[clust$order])
+
+# Relevel object@ident
+object@active.ident<- factor(x = object@active.ident, levels = my_levels)
+
+
+dPlot1 <- do_DotPlot(sample = object, 
+                        features = genes, use_viridis = T, viridis_color_map = "D", viridis_direction = 1, dot.scale = 8, font.size = 12, rotate_x_axis_labels = 90, legend.position = "right", legend.length = 5) 
+
+ # create dendrogram
+ggtree_plot <- ggtree::ggtree(clust)
+
+
+library(cowplot)
+
+plot <- plot_grid(ggtree_plot, dPlot1, nrow = 1, rel_widths = c(0.1,2), align = 'h')
+
+ggsave(plot, width = 20, height = 5, filename = "../Results/Figures/Figure4A.png")
+```
+
+## Figure 4B - DotPlot of genes of interest, Descartes
+```{r}
+overlapGenes <- readRDS('../RdsObjects/all_overlap_genes.rds')
+
+genes <- intersect(desc_panc_sig_genes, overlapGenes)
+
+# Tabula Sapiens
+markers <- desc_panc_markers[genes,]
+
+object <- desc_object
+
+markers$pct.diff <- markers$pct.1 - markers$pct.2
+
+markers$pct.fold <- markers$pct.1/markers$pct.2
+
+indPct_diff <- order(markers$pct.diff, decreasing = T)
+
+indPct_fold <- order(markers$pct.fold, decreasing = T)
+
+indLog_fold <- order(markers$avg_log2FC, decreasing = T)
+
+genes <- rownames(markers[indLog_fold,])
+
+dPlot <- DotPlot(object, features = genes)
+
+data <- dPlot$data
+
+mat <- data %>% 
+  select(-avg.exp, -pct.exp)%>%  # drop unused columns to faciliate widening
+  pivot_wider(names_from = id, values_from = avg.exp.scaled)%>% 
+  data.frame() # make df as tibbles -> matrix annoying
+
+mat.t <- t(mat)
+colnames(mat.t) <- mat.t[1,]
+mat.t <- mat.t[-1,]
+clust <- hclust(dist(mat.t %>% as.matrix())) # hclust with distance matrix
+
+
+my_levels <- sub("[.]", " ", clust$labels[clust$order])
+
+# Relevel object@ident
+object@active.ident<- factor(x = object@active.ident, levels = my_levels)
+
+
+dPlot1 <- do_DotPlot(sample = object, 
+                        features = genes, use_viridis = T, viridis_color_map = "D", viridis_direction = 1, dot.scale = 8, font.size = 12, rotate_x_axis_labels = 90, legend.position = "right", legend.length = 5) 
+
+ # create dendrogram
+ggtree_plot <- ggtree::ggtree(clust)
+
+
+library(cowplot)
+
+plot <- plot_grid(ggtree_plot, dPlot1, nrow = 1, rel_widths = c(0.1,2), align = 'h')
+
+ggsave(plot, width = 20, height = 5, filename = "../Results/Figures/Figure4B.png")
+```
+
+## Figure 5A - Demonstrate contamination and overlap in Tabula Sapiens
+
+```{r}
+# Figure 3A:
+# Change data to tabmDE
+data <- tabs10x_panc_markers
+
+data$gene <- rownames(data)
+
+# Add a column for grouping
+## Make all entries initially not upregulated
+data$Legend <- "Contaminating genes"
+
+indSig <- match('RGS1', data$gene)
+
+data$Legend[indSig] <- "All overlap"
+
+
+indSS <- match(SS, data$gene)
+
+data$Legend[indSS] <- "10X-SmartSeq2 overlap"
+
+
+indTM <- match(TM, data$gene)
+
+data$Legend[indTM] <- "Tabula Muris overlap"
+
+
+indDesc <- match(Desc, data$gene)
+
+data$Legend[indDesc] <- "Descartes overlap"
+
+
+
+# Add a column for named_points (top 10)
+
+## Top robust genes (minus overlap)
+dataSig <- data[indSig,]
+dataSig <- orderMarkers(dataSig, "avg_log2FC")
+genesSig <- na.omit(rownames(dataSig[1:5,]))
+
+## Top robust genes (minus overlap)
+dataSS <- data[indSS,]
+dataSS <- orderMarkers(dataSS, "avg_log2FC")
+genesSS <- na.omit(rownames(dataSS[1:5,]))
+
+## Top robust genes (minus overlap)
+dataTM <- data[indTM,]
+dataTM <- orderMarkers(dataTM, "avg_log2FC")
+genesTM <- na.omit(rownames(dataTM[1:5,]))
+
+## Top robust genes (minus overlap)
+dataDesc <- data[indDesc,]
+dataDesc <- orderMarkers(dataDesc, "avg_log2FC")
+genesDesc <- na.omit(rownames(dataDesc[1:5,]))
+
+
+## Top upregulated genes
+dataUp <- data[setdiff(1:nrow(data), c(indSig, indSS, indTM, indDesc)),]
+dataUp <- orderMarkers(dataUp, "avg_log2FC")
+genesUp <- na.omit(rownames(dataUp[1:5,]))
+
+
+# Add top genes to new column
+indNamed <- match(c(genesUp,'RGS1', genesSS, genesDesc, genesTM), (data$gene))
+data$named_points <- NA
+
+data$named_points[indNamed] <- c(genesUp, 'RGS1', genesSS, genesDesc, genesTM)
+
+
+color <- SCpubr::do_ColorPalette(colors.use = "steelblue", n = 4)
+
+# colors 
+data$col.box <- "white"
+data$col.font <- 'red'
+data$col.font[indSig] <- color[1]
+data$col.font[indSS] <- color[2]
+data$col.font[indTM] <- color[3]
+data$col.font[indDesc] <- color[4]
+
+
+
+library(ggrepel)
+library(ggplot2)
+# plot adding up all layers we have seen so far
+
+colFont <- data$col.font
+
+names(colFont) <- data$Legend
+
+gPlot_pct1 <- ggplot(data = data,  
+                    aes(y = avg_log2FC, 
+                        x = pct.1*100), 
+                    show.legend = F) +
+geom_point(size = 2 * 1.5,
+                      color = 'black') +
+  geom_point(data = data, 
+             aes(y = avg_log2FC, 
+                 x =  pct.1*100, 
+                 color = Legend),
+             size =2) + 
+  xlim(0,130) + 
+  scale_color_manual(values = colFont) +
+  geom_hline(yintercept=c(0.25), 
+             col="black", 
+             linetype="dotted", 
+             size = 1) +
+  geom_label_repel(data = data, 
+                   aes(label = named_points, fill=Legend, color = Legend), 
+                   max.overlaps = Inf, 
+                   show.legend = F, 
+                   xlim  = c(105,NA), 
+                   force_pull   = 0, 
+                   hjust = 0, 
+                   direction = "y", 
+                   segment.linetype = 3,
+                   segment.size = 1,
+                   fontface = "bold",
+                   size =4) +
+    scale_fill_manual(values = data$col.box) +
+    scale_color_manual(values = colFont) + 
+    theme_classic() +  
+    ylab("Average log2FC") + 
+    xlab("Percentage of cells expressing gene") + 
+    theme(axis.text=element_text(size=20),
+          axis.title.x = element_text(size=20, face="bold"),
+          axis.title.y = element_text(size=20, face="bold"),
+          legend.title = element_text(size=20, face = "bold"),
+          legend.text = element_text(size=15),
+          legend.position = 'bottom',
+          legend.direction = 'vertical') +
+  guides(colour = guide_legend(override.aes = list(size=3)))
+```
+
+
+# Merge all pancreas myeloid populations
+```{r}
+
+data_dir <- '../RdsObjects/'
+
+save_dir <- '../RdsObjects/'
+
+object <- readRDS('../RdsObjects/immune_pancreas_tabulasapiens_analyzed_macrophage_only.rds')
+
+obj_list <- list.files(data_dir, pattern = "macrophage")
+
+obj_list <- obj_list[which(grepl('genes', obj_list)==F)]
+
+ind_first_obj <- which(obj_list == 'immune_pancreas_tabulasapiens.rds')
+
+object <- readRDS(paste(data_dir, obj_list[ind_first_obj], sep = ""))
+
+object$source <- "tabulasapiens"
+
+obj_list <- obj_list[-ind_first_obj]
+
+source <- str_split_fixed(str_split_fixed(obj_list, "immune_pancreas_",  2)[,2], ".rds", 2)[,1]
+
+for (i in 1:length(obj_list)){
+  
+  dir <- paste(data_dir, obj_list[i], sep = "")
+  
+  obj <- readRDS(dir)
+  
+  obj$source <- source[i]
+  
+  object <- merge(object, obj)
+}
+
+saveRDS(object, file = paste(save_dir, 'merge_macrophage_only.rds', sep = ""))
+
+```
+
+
+# Overlap
+```{r}
+PancMylGenes_TS <- rownames(Markers)
+
+sigGenes <- intersect(ImmGenes_Panc, PancMylGenes_TS)
+
+sigMarkers <- Markers[sigGenes,]
+
+sigMarkers <- topMarkers(sigMarkers, 'all')
+
+```
+
+
+# Figure Overlap of immune markers in pancreas
+```{r}
+
+library(ggvenn)
+
+vennList <- list("Descartes" = ImmGenes_Panc, 
+                      "TabulaMuris" = PancMylGenes_TS)
+
+color <- SCpubr::do_ColorPalette(colors.use = "steelblue", n = 2)
+
+poolVenn <- ggvenn(
+  vennList, 
+  fill_color = color,
+  stroke_size = 0.5, 
+  set_name_size = 1,
+  show_percentage = F, text_size = 10, 
+  )
+
+ggsave(poolVenn, filename = "../Data/Figures/OverlapOfMacMarkers.png")
+
+```
+
+# Figure dot plot of top 20 genes
+
+```{r}
+dPlot <- do_DotPlot(sample = TSMyel_noDC, group.by = 'organ_tissue',
+                        features = rownames(sigMarkers[1:20,]), use_viridis = T, viridis_color_map = "D", viridis_direction = 1, dot.scale = 8, font.size = 18, rotate_x_axis_labels = 90, legend.position = "right", legend.length = 5) 
+```
+
+# Figure 3C: Dot plot of all signature genes in Descartes EC atlas
+```{r}
+markers <- desc_panc_markers[genes,]
+
+object <- desc_object
+
+markers$pct.diff <- markers$pct.1 - markers$pct.2
+
+markers$pct.fold <- markers$pct.1/markers$pct.2
+
+indPct_diff <- order(markers$pct.diff, decreasing = T)
+
+indPct_fold <- order(markers$pct.fold, decreasing = T)
+
+genes <- rownames(markers[indPct_fold,])
+
+dPlot <- DotPlot(object, features = genes)
+
+data <- dPlot$data
+
+mat <- data %>% 
+  select(-avg.exp, -pct.exp)%>%  # drop unused columns to faciliate widening
+  pivot_wider(names_from = id, values_from = avg.exp.scaled)%>% 
+  data.frame() # make df as tibbles -> matrix annoying
+
+mat.t <- t(mat)
+colnames(mat.t) <- mat.t[1,]
+mat.t <- mat.t[-1,]
+clust <- hclust(dist(mat.t %>% as.matrix())) # hclust with distance matrix
+
+
+my_levels <- sub("[.]", " ", clust$labels[clust$order])
+
+# Relevel object@ident
+object@active.ident<- factor(x = object@active.ident, levels = my_levels)
+
+
+dPlot1 <- do_DotPlot(sample = object, 
+                        features = genes, use_viridis = T, viridis_color_map = "D", viridis_direction = 1, dot.scale = 8, font.size = 12, rotate_x_axis_labels = 90, legend.position = "right", legend.length = 5) 
+
+ # create dendrogram
+ggtree_plot <- ggtree::ggtree(clust)
+
+
+library(cowplot)
+
+plot <- plot_grid(ggtree_plot, dPlot1, nrow = 1, rel_widths = c(0.1,2), align = 'h')
+
+ggsave(plot, width = 20, height = 5, filename = "../Data/Figures/Top50byFC_PancMarkers_TSMyel_Desc.png")
+```
+
+
+Pancreas 
+```{r}
+genesM <- convertGenes(genes, convertTo = 'mouse')
+
+
+dPlot_Desc <- do_DotPlot(sample = pancDesc, 
+                        features = genes, use_viridis = T, viridis_color_map = "D", viridis_direction = 1, dot.scale = 8, font.size = 18, rotate_x_axis_labels = 90, legend.position = "right", legend.length = 5) 
+
+
+dPlot_Tabm <- do_DotPlot(sample = pancTabm, 
+                        features = genesM, use_viridis = T, viridis_color_map = "D", viridis_direction = 1, dot.scale = 8, font.size = 18, rotate_x_axis_labels = 90, legend.position = "right", legend.length = 5)
+
+
+
+dPlot_Tabs <- do_DotPlot(sample = pancTabs, 
+                        features = genes, use_viridis = T, viridis_color_map = "D", viridis_direction = 1, dot.scale = 8, font.size = 18, rotate_x_axis_labels = 90, legend.position = "right", legend.length = 5) 
+
+
+
+dPlot_TostiAdult <- do_DotPlot(sample = pancTostiAdult, 
+                        features = genes, use_viridis = T, viridis_color_map = "D", viridis_direction = 1, dot.scale = 8, font.size = 18, rotate_x_axis_labels = 90, legend.position = "right", legend.length = 5) 
+
+
+
+
+dPlot_TostiNeo <- do_DotPlot(sample = pancTostiNeo, 
+                        features = genes, use_viridis = T, viridis_color_map = "D", viridis_direction = 1, dot.scale = 8, font.size = 18, rotate_x_axis_labels = 90, legend.position = "right", legend.length = 5) 
+```
+
+
+```{r}
+dPlot_mvSub <- do_DotPlot(sample = mv, 
+                        features = genesM, use_viridis = T, viridis_color_map = "D", viridis_direction = 1, dot.scale = 8, font.size = 18, rotate_x_axis_labels = 90, legend.position = "right", legend.length = 5) 
+
+
+dPlot_mvSample <- do_DotPlot(sample = mv, group.by = 'Sample',
+                        features = genesM, use_viridis = T, viridis_color_map = "D", viridis_direction = 1, dot.scale = 8, font.size = 18, rotate_x_axis_labels = 90, legend.position = "right", legend.length = 5) 
+```
+
+
+# Figure Stacked VlnPlot
+```{r}
+
+# Genes to plot
+
+selectgenesM <- convertGenes(selectGenes, convertTo = 'mouse')
+
+mv <- SetIdent(mv, value = 'Sample')
+
+color.scheme <- SCpubr::do_ColorPalette(colors.use = "steelblue", n = 4)
+
+genesMmv <- intersect(rownames(mv), genesM)
+
+# Stacked Violin Plot
+svPlot <- StackedVlnPlot(mv, features = genesMmv[11:], cols = color.scheme )
+
+ggsave(svPlot, filename = "../Results/Figures/Figure6D.png", width = 5, height = 12)
+
+```
+
+
